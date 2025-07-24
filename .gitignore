@@ -1,0 +1,6 @@
+*.STL
+*.stl
+*.obj
+*.dae
+__pycache__/
+
