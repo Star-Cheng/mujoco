@@ -13,8 +13,8 @@
 import bpy
 import os
 
-stl_dir = r"/root/gym/code/catkin_ws/src/description/tiangong_description/meshes_back"
-save_dir = r"/root/gym/code/catkin_ws/src/description/tiangong_description/meshes"
+stl_dir = r"./description/tiangong_description/meshes_back"
+save_dir = r"./description/tiangong_description/meshes"
 stl_listdir = os.listdir(stl_dir)
 for stl_name in stl_listdir:
     # 导入 STL 文件
