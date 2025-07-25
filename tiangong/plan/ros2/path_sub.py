@@ -13,8 +13,8 @@ class DisplayTrajectorySubscriber(Node):
             for point in trajectory.joint_trajectory.points:
                 positions = point.positions
                 velocities = point.velocities
-                # self.get_logger().info(f"Received joint positions: {positions}")
-                self.get_logger().info(f"Received joint velocities: {velocities}")
+                self.get_logger().info(f"Received joint positions: {positions}")
+                # self.get_logger().info(f"Received joint velocities: {velocities}")
 
 
 def main(args=None):
