@@ -69,7 +69,7 @@ class Test(mujoco_viewer.CustomViewer):
         
 
 if __name__ == "__main__":
-    test = Test("mujoco/model/franka_emika_panda/scene.xml")
+    test = Test("control/mujoco/model/franka_emika_panda/scene.xml")
     test.run_loop()
 
     

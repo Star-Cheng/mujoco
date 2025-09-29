@@ -26,7 +26,7 @@ def calculate_joint_distance(q1, q2):
 def main(target_joints):
     global cam
     # 加载模型
-    model = mujoco.MjModel.from_xml_path('./mujoco/model/franka_emika_panda/scene.xml')
+    model = mujoco.MjModel.from_xml_path('./control/mujoco/model/franka_emika_panda/scene.xml')
     data = mujoco.MjData(model)
 
     # 初始化 GLFW

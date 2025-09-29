@@ -90,7 +90,7 @@ def main():
     }
     
     # 加载模型
-    model = mujoco.MjModel.from_xml_path('./mujoco/model/franka_emika_panda/scene.xml')
+    model = mujoco.MjModel.from_xml_path('./control/mujoco/model/franka_emika_panda/scene.xml')
     data = mujoco.MjData(model)
     
     # 启动TCP服务器线程
