@@ -63,7 +63,7 @@ def forward_dynamics_basic(model, data, q, q_dot, tau):
 
 if __name__ == "__main__":
     # 1 创建模型
-    urdf_path = "/home/gym/code/ros2/fishbot/src/description/Robot600_12/urdf/Robot600_12.urdf"
+    urdf_path = "./description/Robot600_12/urdf/Robot600_12.urdf"
     model = pin.buildModelFromUrdf(urdf_path)
     data = model.createData()
     q = np.zeros(model.nq)
