@@ -1,14 +1,15 @@
+from pinocchio.visualize import MeshcatVisualizer
+from numpy.linalg import norm, solve
 from tracikpy import TracIKSolver
 import pinocchio as pin
 import numpy as np
-from numpy.linalg import norm, solve
 import time
 import csv
 import os
 
 
 class PinocchioSolver:
-    def __init__(self, urdf_path=None, package_dir=None, verbose=False):
+    def __init__(self, urdf_path=None, package_dir=None, verbose=False, Visualization=True):
         """
         初始化 Solver 类
 
@@ -34,8 +35,19 @@ class PinocchioSolver:
         # 2. 创建 Data 对象 (用于存储计算过程中的中间变量)
         self.data = self.model.createData()
 
+        # 加载机械臂模型
+        self.robot = pin.RobotWrapper.BuildFromURDF(urdf_path)
+
+        # 创建简化模型（不锁定任何关节）
+        self.mixed_jointsToLockIDs = []
+        self.reduced_robot = self.robot.buildReducedRobot(
+            list_of_joints_to_lock=self.mixed_jointsToLockIDs,
+            reference_configuration=np.array([0.0] * self.robot.model.nq),
+        )
+
         # 3. 设置默认末端关节 ID (通常是最后一个关节)
         self.ee_joint_id = self.model.njoints - 1
+        self.ee_joint_name = "joint6"
 
         # 4. 获取关节维度
         self.nq = self.model.nq  # 关节位置维度
@@ -43,6 +55,28 @@ class PinocchioSolver:
 
         if self.verbose:
             print(f"[INFO] Model loaded: {self.model.name}, End-Effector ID: {self.ee_joint_id}")
+        # 初始化可视化
+        self.Visualization = Visualization
+        self.vis = None
+        if self.Visualization:
+            self._init_visualization()
+
+    def _init_visualization(self):
+        """初始化可视化"""
+        self.vis = MeshcatVisualizer(self.reduced_robot.model, self.reduced_robot.collision_model, self.reduced_robot.visual_model)
+        self.vis.initViewer(open=True)
+        self.vis.loadViewerModel("pinocchio")
+
+        # 显示坐标系
+        ee_id = self.model.getFrameId(self.ee_joint_name)
+        self.vis.displayFrames(True, frame_ids=[ee_id], axis_length=0.1, axis_width=5)
+        self.vis.display(pin.neutral(self.reduced_robot.model))
+
+    def getJac(self, q):
+        pin.forwardKinematics(self.model, self.data, q)
+        pin.updateFramePlacements(self.model, self.data)
+        J = pin.computeFrameJacobian(self.model, self.data, q, self.ee_joint_id, pin.ReferenceFrame.WORLD)
+        return J
 
     def fk(self, q):
         """
@@ -67,6 +101,10 @@ class PinocchioSolver:
         oMi = self.data.oMi[self.ee_joint_id]
 
         return oMi.translation, oMi.rotation
+        ee_pose = np.eye(4, dtype=np.float64)
+        ee_pose[:3, :3] = oMi.rotation
+        ee_pose[:3, 3] = oMi.translation
+        return ee_pose
 
     def ik(self, target_pos, target_rot=None, q_init=None, eps=5e-4, it_max=1000, dt=1e-1, damp=1e-12):
         """
@@ -123,6 +161,7 @@ class PinocchioSolver:
             # --- D. 计算雅可比矩阵 ---
             # 在局部坐标系(Local Frame)下计算雅可比
             J = pin.computeJointJacobian(self.model, self.data, q, self.ee_joint_id)
+            # J = self.getJac(q)
 
             # --- E. 雅可比修正 (Jlog6) ---
             # 因为误差是在李代数空间计算的，我们需要将几何雅可比转换以匹配 log 映射
@@ -139,7 +178,10 @@ class PinocchioSolver:
 
         if not success and self.verbose:
             print(f"[IK] Failed to converge after {it_max} iters. Final error: {final_err:.6f}")
-
+        # 可视化
+        if self.Visualization:
+            self.vis.viewer["endeff_target"].set_transform(target_pos)
+            self.vis.display(q)
         return success, q, final_err
 
 
@@ -185,6 +227,7 @@ if __name__ == "__main__":
     # 2. 定义一个测试目标
     print("q_target_truth = ", [0.0] * 6)
     for i in range(len(trajectory_data)):
+        time.sleep(0.01)
         current_joints = trajectory_data[i]["positions"][:6]
         pinocc_pose = solver.fk(np.array(current_joints))
         tracik_pose = tracik.fk(np.array(current_joints))
@@ -194,6 +237,7 @@ if __name__ == "__main__":
 
         # 4. 测试 IK
         # 给一个完全不同的初始猜测 (例如全0)
+        # success, q_sol, err = solver.ik(target_pos=pinocc_pose[0], target_rot=pinocc_pose[1], q_init=current_joints, dt=0.005, damp=0.01)
         success, q_sol, err = solver.ik(target_pos=pinocc_pose[0], target_rot=pinocc_pose[1], q_init=current_joints, eps=1e-4, dt=0.005, damp=2e-2)
         tracik_joints = tracik.ik(tracik_pose)
         # print("Pinocchio IK: ", q_sol)
