@@ -16,7 +16,7 @@ class JointStateSubscriber(Node):
         )
         
         # 加载模型
-        self.model = mujoco.MjModel.from_xml_path('./mujoco/model/franka_emika_panda/scene.xml')
+        self.model = mujoco.MjModel.from_xml_path('./control/mujoco/model/franka_emika_panda/scene.xml')
         self.data = mujoco.MjData(self.model)
         self.positions = np.zeros(7)  # 假设有7个关节
 

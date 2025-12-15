@@ -17,6 +17,7 @@ class Test(mujoco_viewer.CustomViewer):
 
 if __name__ == "__main__":
     test = Test("./description/mujoco_menagerie/unitree_g1/scene.xml")
+    # test = Test("/home/gym/code/ros2/fishbot/src/description/songling_description/mujoco_model/scene.xml")
     # test = Test("./description/mujoco_menagerie/unitree_go2/scene.xml")
     # test = Test("./description/mujoco_menagerie/unitree_z1/scene.xml")
     test.run_loop()
