@@ -75,7 +75,7 @@ class PinocchioSolver:
     def getJac(self, q):
         pin.forwardKinematics(self.model, self.data, q)
         pin.updateFramePlacements(self.model, self.data)
-        J = pin.computeFrameJacobian(self.model, self.data, q, self.ee_joint_id, pin.ReferenceFrame.WORLD)
+        J = pin.computeFrameJacobian(self.model, self.data, q, self.ee_joint_name, pin.ReferenceFrame.WORLD)
         return J
 
     def fk(self, q):
@@ -160,8 +160,7 @@ class PinocchioSolver:
 
             # --- D. 计算雅可比矩阵 ---
             # 在局部坐标系(Local Frame)下计算雅可比
-            J = pin.computeJointJacobian(self.model, self.data, q, self.ee_joint_id)
-            # J = self.getJac(q)
+            J = self.getJac(q)
 
             # --- E. 雅可比修正 (Jlog6) ---
             # 因为误差是在李代数空间计算的，我们需要将几何雅可比转换以匹配 log 映射
