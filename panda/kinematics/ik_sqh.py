@@ -2,92 +2,59 @@
 # -*- coding: utf-8 -*-
 # vim:fenc=utf-8
 """
-@File    :   ik_dls.py
-@Time    :   2025/12/09 16:20:17
+@File    :   ik_mix.py
+@Time    :   2025/12/09 16:01:01
 @Author  :   StarCheng
 @Version :   1.0
 @Site    :   https://star-cheng.github.io/Blog/
 """
+from pinocchio.visualize import MeshcatVisualizer
+import meshcat
+import meshcat.geometry as g
+import meshcat.transformations as tf
 from numpy.linalg import norm, solve
+from tracikpy import TracIKSolver
 import pinocchio as pin
 import numpy as np
+import time
+import csv
+import os
 
 
-class PinocchioSolver:
-    def __init__(self, urdf_path=None, package_dir=None, verbose=False):
+class SqhSolver(TracIKSolver):
+    def __init__(self, urdf_file, base_link, tip_link, timeout=0.005, epsilon=1e-5, solve_type="Speed", Visualization=True):
         """
-        初始化 Solver 类
-
-        Args:
-            urdf_path (str): URDF 文件路径。如果为 None, 则加载示例模型
-            package_dir (str): URDF 资源包路径(如果有网格文件mesh需指定)
-            verbose (bool): 是否打印调试信息。
+        IK求解器, 支持多次尝试和关节限位惩罚
+        参数:
+            urdf_file: URDF文件路径
+            base_link: 基座链接名称
+            tip_link: 末端链接名称
+            timeout: IK求解超时时间
+            epsilon: IK求解精度
+            solve_type: IK求解类型, 可选值: Speed (default), Distance, Manipulation1, Manipulation2
         """
-        self.verbose = verbose
+        super().__init__(urdf_file, base_link, tip_link, timeout, epsilon, solve_type)
+        self.lb, self.ub = self.joint_limits
+        self.joint_mid = (self.lb + self.ub) / 2
 
-        # 1. 加载模型
-        if urdf_path:
-            # 如果指定了 URDF，加载它
-            if package_dir:
-                self.model = pin.buildModelFromUrdf(urdf_path, package_dir)
-            else:
-                self.model = pin.buildModelFromUrdf(urdf_path)
-        else:
-            # 否则加载示例模型 (6自由度机械臂)
-            print("[INFO] No URDF provided, using sample manipulator model.")
-            self.model = pin.buildSampleModelManipulator()
+    def ik(self, ee_pose, qinit=None, bx=1e-5, by=1e-5, bz=1e-5, brx=1e-3, bry=1e-3, brz=1e-3):
+        solution = super().ik(ee_pose, qinit, bx, by, bz, brx, bry, brz)
+        return solution
 
-        # 2. 创建 Data 对象 (用于存储计算过程中的中间变量)
-        self.data = self.model.createData()
-
-        # 3. 设置默认末端关节 ID (通常是最后一个关节)
-        self.ee_joint_id = self.model.njoints - 1
-        self.ee_joint_name = "joint6"
-
-        # 4. 获取关节维度
-        self.nq = self.model.nq  # 关节位置维度
-        self.nv = self.model.nv  # 关节速度维度 (通常等于nq)
-        self.lb, self.ub = np.array(self.model.lowerPositionLimit), np.array(self.model.upperPositionLimit)
-        self.joint_mid = (self.lb + self.ub) / 2.0
-
-        if self.verbose:
-            print(f"[INFO] Model loaded: {self.model.name}, End-Effector ID: {self.ee_joint_id}")
-
-    def getJac(self, q):
-        q = np.array(q)
-        pin.forwardKinematics(self.model, self.data, q)
-        pin.updateFramePlacements(self.model, self.data)
-        J = pin.computeFrameJacobian(self.model, self.data, q, self.model.getFrameId(self.ee_joint_name), pin.ReferenceFrame.WORLD)
-        return J
-
-    def fk(self, q):
+    @staticmethod
+    def _skew(vec):
         """
-        正运动学求解 (Forward Kinematics)
-
-        Args:
-            q (np.ndarray): 关节角度数组
-
-        Returns:
-            tuple: (translation, rotation_matrix)
-                   translation: np.array [x, y, z]
-                   rotation_matrix: np.array 3x3
+        将局部世界对齐坐标系下的雅可比矩阵转换为世界坐标系下的雅可比矩阵
+        返回向量的反对称矩阵 [v]_x, 使得 [v]_x @ w = v * w
         """
-        # 执行正运动学计算
-        q = np.array(q)
-        pin.forwardKinematics(self.model, self.data, q)
-
-        # 更新关节在世界坐标系下的位置
-        pin.updateFramePlacements(self.model, self.data)
-
-        # 获取末端关节的位姿对象 (SE3)
-        # oMi 表示 Object (Joint) in World (Origin)
-        oMi = self.data.oMi[self.ee_joint_id]
-
-        # return oMi.translation, oMi.rotation
-        ee_pose = np.eye(4, dtype=np.float64)
-        ee_pose[:3, :3] = oMi.rotation
-        ee_pose[:3, 3] = oMi.translation
-        return ee_pose
+        x, y, z = vec
+        return np.array(
+            [
+                [0.0, -z, y],
+                [z, 0.0, -x],
+                [-y, x, 0.0],
+            ]
+        )
 
     def _rotation_error(self, R_desired, R_current):
         """计算旋转矩阵误差"""
@@ -108,30 +75,30 @@ class PinocchioSolver:
     def _normalize_joint_angles(self, q):
         """
         将关节角度归一化到限位内，考虑旋转关节的周期性（2π周期）
-
+        
         对于旋转关节，如果角度超出限位，通过加减 2π 的整数倍来找到限位内的等价角度。
         例如：37.481 可以通过减去 12*π 得到 -0.218，这个值在限位内。
-
+        
         Args:
             q: 关节角度数组
-
+            
         Returns:
             q_normalized: 归一化后的关节角度数组
         """
         q_normalized = np.array(q, copy=True)
         two_pi = 2 * np.pi
-
-        for i in range(self.nq):
+        
+        for i in range(self.number_of_joints):
             lb, ub = self.lb[i], self.ub[i]
             q_i = q[i]
-
+            
             # 如果已经在限位内，直接跳过
             if lb <= q_i <= ub:
                 continue
-
+            
             # 计算限位范围
             limit_range = ub - lb
-
+            
             # 如果限位范围 >= 2π，说明是连续旋转关节，直接模运算
             if limit_range >= two_pi - 1e-6:
                 # 将角度归一化到 [lb, lb + 2π) 范围内
@@ -179,86 +146,132 @@ class PinocchioSolver:
                                 q_normalized[i] = q_i
                         else:
                             q_normalized[i] = q_i
-
+        
         return q_normalized
 
-    def ik(self, target_pos, target_rot=None, q_init=None, eps=5e-4, it_max=1000, dt=1e-1, damp=1e-12):
+    def get_numerical_jacobian(self, q, eps=1e-6, frame="WORLD"):
+        n = len(q)
+        jacobian = np.zeros((6, n))
+
+        # 计算当前位置和姿态
+        T_current = self.fk(q[:self.number_of_joints])
+        R_current = T_current[:3, :3]
+
+        for i in range(n):
+            # 中心差分
+            q_plus = np.array(q, copy=True)
+            q_minus = np.array(q, copy=True)
+            q_plus[i] += eps
+            q_minus[i] -= eps
+
+            # 获取末端位姿
+            T_plus = self.fk(q_plus)
+            T_minus = self.fk(q_minus)
+
+            # 位置部分 - 中心差分
+            pos_plus = T_plus[:3, 3]
+            pos_minus = T_minus[:3, 3]
+            # J_v = delta_p / dq
+            jacobian[:3, i] = (pos_plus - pos_minus) / (2 * eps)
+
+            # 姿态部分 - 使用旋转矩阵的差分
+            R_plus = T_plus[:3, :3]
+            R_minus = T_minus[:3, :3]
+
+            # 计算旋转矩阵的对数映射得到角速度
+            # ΔR = R_current^T * R_plus ≈ exp([ω]×) ≈ I + [ω]×
+            delta_R_plus = R_current[:3, :3].T @ R_plus
+            delta_R_minus = R_current[:3, :3].T @ R_minus
+
+            # 使用对数映射获取旋转向量
+            # 注意：scipy的Rotation有更好的实现
+            from scipy.spatial.transform import Rotation as R
+
+            r_plus = R.from_matrix(delta_R_plus).as_rotvec()
+            r_minus = R.from_matrix(delta_R_minus).as_rotvec()
+
+            # 中心差分，并转换到世界坐标系
+            omega_local = (r_plus - r_minus) / (2 * eps)
+            omega_world = R_current[:3, :3] @ omega_local
+            # J_ω = delta_ω / dq
+            jacobian[3:, i] = omega_world
+
+        if frame == "WORLD":
+            X = np.eye(6)
+            X[:3, 3:] = self._skew(T_current[:3, 3])
+            jac_world = X @ jacobian
+            return jac_world
+        return jacobian
+
+    def dp_ik(self, target_pos, target_rot=None, q_init=None, eps=5e-4, max_iter=1000, dt=1e-1, damp=1e-12):
         """
-        逆运动学求解 (Inverse Kinematics) - 使用阻尼最小二乘法
+        使用雅可比转置法实现逆运动学
 
         Args:
-            target_pos (np.ndarray): 目标位置 [x, y, z]
-            target_rot (np.ndarray, optional): 目标旋转矩阵 3x3。如果为None, 则只解位置(3D)。
-            q_init (np.ndarray, optional): 初始猜测关节角。默认为当前中性位或零位。
-            eps (float): 收敛阈值。
-            it_max (int): 最大迭代次数。
-            dt (float): 积分步长。
-            damp (float): 阻尼系数 (防止奇异性)。
+            target_pos: 目标位置 (3,)
+            target_rot: 目标旋转矩阵 (3,3), 可选
+            q_init: 初始关节角度, 默认全0
+            eps: 收敛阈值
+            max_iter: 最大迭代次数
+            dt: 步长
+            damp: 阻尼系数
 
         Returns:
-            tuple: (success, q_solution, final_err)
+            q: 关节角度数组, 或None（如果失败）
         """
-        # 1. 构造目标位姿 SE3 对象
-        if target_rot is None:
-            target_rot = np.eye(3)  # 默认为无旋转
-
-        oMdes = pin.SE3(target_rot, np.array(target_pos))
-
-        # 2. 初始化 q
         if q_init is None:
-            q = pin.neutral(self.model)
+            q = np.zeros(self.number_of_joints)
         else:
             q = np.array(q_init)
 
-        # 3. 迭代求解
-        success = False
-        final_err = 0.0
+        for iteration in range(max_iter):
+            # 当前末端位姿
+            # link_poses = self.fk(q)
+            T_current = self.fk(q)
+            p_current = T_current[:3, 3]
 
-        for i in range(it_max):
-            # --- A. 正运动学更新 ---
-            pin.forwardKinematics(self.model, self.data, q)
-
-            # --- B. 计算误差 ---
-            # iMd: inverse of M (current) * d (desired) -> 差异变换矩阵
-            iMd = self.data.oMi[self.ee_joint_id].actInv(oMdes)
-
-            # 将 SE3 误差映射到 6D 向量 (李代数 se3)
-            # vector: [v_x, v_y, v_z, w_x, w_y, w_z]
-            err = pin.log(iMd).vector
-            final_err = norm(err)
-            print("=======================================1")
-
-            # --- C. 检查收敛 ---
-            if final_err < eps:
-                success = True
-                # print("q = ", q)
-
-                if self.verbose:
-                    print(f"[IK] Converged at iter {i}, error: {final_err:.6f}")
-                print("=======================================2")
-                return success, q, final_err
-            # --- D. 计算雅可比矩阵 ---
-            print("=======================================3")
-            J = self.getJac(q)
-            print("=======================================4")
-            p_current = self.fk(q)[0:3, 3]
-            R_current = self.fk(q)[0:3, :3]
+            # 位置误差
             e_pos = target_pos - p_current
+
+            # 姿态误差（如果指定了目标姿态）
+            R_current = T_current[:3, :3]
             e_rot = self._rotation_error(target_rot, R_current)
             e = np.concatenate([e_pos, e_rot])
 
-            J_JT = J @ J.T
-            I = np.eye(J_JT.shape[0])
-            dq = dt * J.T @ np.linalg.solve(J_JT + damp**2 * I, e)
+            # 检查收敛
+            error_norm = np.linalg.norm(e)
+            if error_norm < eps:
+                print(f"逆运动学收敛于 {iteration} 次迭代, 误差: {error_norm:.6f}")
+                # 返回前将角度归一化到限位内（考虑周期性）
+                q_normalized = self._normalize_joint_angles(q)
+                return q_normalized
+
+            # 计算雅可比矩阵
+            J = self.get_numerical_jacobian(q)
+
+            # 雅可比转置法：dq = dt * J^T * e
+            # 或阻尼最小二乘法：dq = dt * J^T * (J * J^T + damp^2 * I)^-1 * e
+            if damp > 0:
+                # 阻尼最小二乘法
+                J_JT = J @ J.T
+                I = np.eye(J_JT.shape[0])
+                dq = dt * J.T @ np.linalg.solve(J_JT + damp**2 * I, e)
+            else:
+                # 雅可比转置法
+                dq = dt * J.T @ e
+
+            # 更新关节角度
             q = q + dq
 
-        if not success and self.verbose:
-            print(f"[IK] Failed to converge after {it_max} iters. Final error: {final_err:.6f}")
+            if iteration % 100 == 0:
+                print(f"Iteration {iteration}: error = {error_norm:.6f}")
 
-        # q = self._normalize_joint_angles(q) if success else q
-        return success, q, final_err
-
-    def dp_ik_constraint(self, target_pos, target_rot=None, q_init=None, eps=5e-4, max_iter=1000, dt=1e-1, damp=1e-12, joint_limit_margin=0.2, joint_limit_stiffness=200.0):
+        print(f"逆运动学未收敛, 最终误差: {error_norm:.6f}")
+        # 即使未收敛，也尝试归一化角度后返回（如果误差可接受）
+        q_normalized = self._normalize_joint_angles(q)
+        return q_normalized
+    def dp_ik_constraint(self, target_pos, target_rot=None, q_init=None, eps=5e-4, max_iter=1000, dt=1e-1, damp=1e-12, 
+              joint_limit_margin=0.2, joint_limit_stiffness=200.0):
         """
         使用雅可比转置法实现逆运动学，支持关节限位约束
 
@@ -277,11 +290,11 @@ class PinocchioSolver:
             q: 关节角度数组, 或None（如果失败）
         """
         if q_init is None:
-            q = np.zeros(self.nq)
+            q = np.zeros(self.number_of_joints)
         else:
             q = np.array(q_init)
         target_rot = np.array(target_rot) if target_rot is not None else None
-
+        
         # 确保初始关节角度在限位内
         q = np.clip(q, self.lb, self.ub)
         for iteration in range(max_iter):
@@ -324,7 +337,7 @@ class PinocchioSolver:
                         return q_clipped
 
             # 计算雅可比矩阵
-            J = self.getJac(q)
+            J = self.get_numerical_jacobian(q)
 
             # 雅可比转置法：dq = dt * J^T * e
             # 或阻尼最小二乘法：dq = dt * J^T * (J * J^T + damp^2 * I)^-1 * e
@@ -339,12 +352,12 @@ class PinocchioSolver:
 
             # 关节限位约束处理
             # 1. 计算关节限位惩罚项（软约束）
-            limit_penalty = np.zeros(self.nq)
-            for i in range(self.nq):
+            limit_penalty = np.zeros(self.number_of_joints)
+            for i in range(self.number_of_joints):
                 # 计算到限位边界的距离
                 dist_to_lower = q[i] - self.lb[i]
                 dist_to_upper = self.ub[i] - q[i]
-
+                
                 # 如果接近或超出下界
                 if dist_to_lower < joint_limit_margin:
                     # 添加向限位中心回拉的力
@@ -353,13 +366,13 @@ class PinocchioSolver:
                 elif dist_to_upper < joint_limit_margin:
                     # 添加向限位中心回拉的力
                     limit_penalty[i] = joint_limit_stiffness * (self.joint_mid[i] - q[i]) * (1.0 - dist_to_upper / joint_limit_margin)
-
+            
             # 将限位惩罚转换为关节空间的速度
             dq = dq + dt * limit_penalty * 0.1  # 限位惩罚的权重
-
+            
             # 2. 限制步长，确保不会超出限位
             scale = 1.0
-            for i in range(self.nq):
+            for i in range(self.number_of_joints):
                 if dq[i] > 0:
                     # 向上移动，检查上界
                     max_dq = self.ub[i] - q[i]
@@ -370,14 +383,14 @@ class PinocchioSolver:
                     max_dq = q[i] - self.lb[i]
                     if max_dq < -dq[i]:
                         scale = min(scale, max_dq / (-dq[i]))
-
+            
             # 应用缩放因子，但保留至少很小的步长以保持收敛性
             scale = max(scale, 0.01)  # 最小步长比例
             dq = dq * scale
 
             # 更新关节角度
             q_new = q + dq
-
+            
             # 3. 最终投影到限位内（作为安全措施）
             q = np.clip(q_new, self.lb, self.ub)
 
@@ -395,26 +408,26 @@ class PinocchioSolver:
         else:
             e_rot_final = np.zeros(3)
         error_final = np.linalg.norm(np.concatenate([e_pos_final, e_rot_final]))
-
+        
         if error_final < eps * 5:  # 允许稍大的误差
             print(f"逆运动学收敛（限位内）, 最终误差: {error_final:.6f}")
             return q_final
-
+        
         print(f"逆运动学未收敛, 最终误差: {error_final:.6f}")
         return None
 
 
 if __name__ == "__main__":
     # 1. 实例化 Solver
-    # 如果你有 urdf，使用: solver = PinocchioSolver("path/to/robot.urdf")
-    solver = PinocchioSolver("./data/urdf/piper_no_gripper_description.urdf", verbose=False)
+    solver = SqhSolver("./data/urdf/piper_no_gripper_description.urdf", "base_link", "link6", epsilon=1e-4, solve_type="Distance")
     joints = [0.03991598456487204, 2.3324827772046364, -1.5697804188440443, 0.32222799255209433, 0.9400658986956835, -0.21811814869317986]
     ee_pose = solver.fk(joints)
     print(ee_pose[:3, 3].round(5))
-    ik_joints = solver.dp_ik_constraint(ee_pose[:3, 3], ee_pose[:3, :3], solver.joint_mid)
-    print(ik_joints) if ik_joints is not None else print("Failed")
-    fk_val = solver.fk(ik_joints) if ik_joints is not None else None
-    delta_xyz = ee_pose[:3, 3] - fk_val[:3, 3] if fk_val is not None else None
-    print(delta_xyz.round(5) * 1000) if delta_xyz is not None else print("No delta")
-    jac = solver.getJac([0.0] * 6)
-    print("jac =\n", jac.round(3))
+    ik_joints = solver.ik(ee_pose, [0.0] * 6)
+    print(ik_joints)
+    ik_joints = solver.dp_ik(ee_pose[:3, 3], ee_pose[:3, :3], solver.joint_mid)
+    print(ik_joints.round(3))
+    valid_ee = solver.fk(ik_joints)[:3, 3] if ik_joints is not None else None
+    print("valid_ee = ", valid_ee.round(5)) if ik_joints is not None else print("valid_ee = None")
+    print("delta = ", 1000 * (ee_pose[:3, 3] - valid_ee).round(5)) if ik_joints is not None else print("delta = None")
+    print(solver.joint_limits)

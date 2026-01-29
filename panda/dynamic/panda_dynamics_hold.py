@@ -57,24 +57,6 @@ class PandaEnv(mujoco_viewer.CustomViewer):
         self.step_list.append(self.step)
         self.dynamics_tau_list.append(dynamics_tau[:7].copy())
         self.damping_tau_list.append(impedence_tau[:7].copy())
-        # if self.step >= 2000:
-        #     self.plotTorque()
-    def plotTorque(self):
-        steps = np.array(self.step_list)
-        dynamics_tau = np.array(self.dynamics_tau_list)
-        damping_tau = np.array(self.damping_tau_list)
-        fig, axes = plt.subplots(7, 1, figsize=(10, 14), sharex=True)
-        fig.suptitle('dynamics_tau & damping_tau', fontsize=14, fontweight='bold')
-        joint_names = ['j1', 'j2', 'j4', 'j5', 'j6', 'j7', 'j8']
-        for i in range(7):
-            axes[i].plot(steps, dynamics_tau[:, i], label=f'dynamics_tau', color='blue', linewidth=1.5)
-            axes[i].plot(steps, damping_tau[:, i], label=f'damping_tau', color='red', linewidth=1.5)
-            axes[i].set_ylabel(f'{joint_names[i]} Tau (N·m)')
-            axes[i].grid(True, alpha=0.3) 
-            axes[i].legend(loc='upper right')
-        axes[-1].set_xlabel('step')
-        plt.tight_layout()
-        plt.show()
 
 
 if __name__ == "__main__":

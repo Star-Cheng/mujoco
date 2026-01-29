@@ -226,7 +226,6 @@ class PinocchioSolver:
             # vector: [v_x, v_y, v_z, w_x, w_y, w_z]
             err = pin.log(iMd).vector
             final_err = norm(err)
-            print("=======================================1")
 
             # --- C. 检查收敛 ---
             if final_err < eps:
@@ -235,12 +234,10 @@ class PinocchioSolver:
 
                 if self.verbose:
                     print(f"[IK] Converged at iter {i}, error: {final_err:.6f}")
-                print("=======================================2")
-                return success, q, final_err
+                break
+
             # --- D. 计算雅可比矩阵 ---
-            print("=======================================3")
             J = self.getJac(q)
-            print("=======================================4")
             p_current = self.fk(q)[0:3, 3]
             R_current = self.fk(q)[0:3, :3]
             e_pos = target_pos - p_current
@@ -255,7 +252,7 @@ class PinocchioSolver:
         if not success and self.verbose:
             print(f"[IK] Failed to converge after {it_max} iters. Final error: {final_err:.6f}")
 
-        # q = self._normalize_joint_angles(q) if success else q
+        q = self._normalize_joint_angles(q) if success else None
         return success, q, final_err
 
     def dp_ik_constraint(self, target_pos, target_rot=None, q_init=None, eps=5e-4, max_iter=1000, dt=1e-1, damp=1e-12, joint_limit_margin=0.2, joint_limit_stiffness=200.0):
