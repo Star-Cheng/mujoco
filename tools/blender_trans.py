@@ -13,8 +13,8 @@
 import bpy
 import os
 
-stl_dir = r"./description/tiangong_description/meshes_back"
-save_dir = r"./description/tiangong_description/meshes"
+stl_dir = r"/home/gym/code/zerich/teleop/teleop_02_lingshou/Teleop_whole_body_sim/teleop/scripts/urdf/ZR_E1-1.01.01_URDFV1.1_260313/meshes_bk"
+save_dir = r"/home/gym/code/zerich/teleop/teleop_02_lingshou/Teleop_whole_body_sim/teleop/scripts/urdf/ZR_E1-1.01.01_URDFV1.1_260313/meshes"
 stl_listdir = os.listdir(stl_dir)
 for stl_name in stl_listdir:
     # 导入 STL 文件
@@ -43,11 +43,11 @@ for stl_name in stl_listdir:
     if obj.type == 'MESH':
         # 添加减面修改器
         modifier = obj.modifiers.new(name='Decimate', type='DECIMATE')
-        # if face_count < 10000:
-        #     modifier.ratio = 1.0
-        # else:
-        #     modifier.ratio = 10000 / face_count
-        modifier.ratio = 0.1
+        if face_count < 20000:
+            modifier.ratio = 1.0
+        else:
+            modifier.ratio = 20000 / face_count
+        # modifier.ratio = 0.1
 
         # 选择对象，确保它被选中
         obj.select_set(True)
