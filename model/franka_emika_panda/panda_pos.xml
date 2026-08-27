@@ -215,6 +215,11 @@
                       <geom mesh="hand_3" material="white" class="visual"/>
                       <geom mesh="hand_4" material="off_white" class="visual"/>
                       <geom mesh="hand_c" class="collision"/>
+                      <!-- Wrist force/torque sensor frame at the TCP.  The site is
+                           attached directly to hand so the sensor measures the
+                           complete hand/finger subtree against link7. -->
+                      <site name="ee_ft_site" pos="0 0 0.105" size="0.008"
+                            rgba="1 0.5 0 0.5" group="3"/>
                       
                       <!-- refer to the panda_grasptarget in panda.urdf in panda_gym -->
                         <body name="ee_center_body" pos="0 0 0.105" quat="1 0 0 0">
@@ -289,6 +294,13 @@
              forcerange="-100 100" ctrlrange="0 255"
              gainprm="0.01568627451 0" biasprm="0 -100 -10"/>
   </actuator>
+
+  <!-- MuJoCo represents a six-axis F/T sensor as one 3-axis force sensor
+       plus one 3-axis torque sensor.  Both outputs use ee_ft_site's frame. -->
+  <sensor>
+    <force name="ee_force" site="ee_ft_site"/>
+    <torque name="ee_torque" site="ee_ft_site"/>
+  </sensor>
 
   <keyframe>
     <key name="home" qpos="0 0 0 -1.57079 0 3.0 -1.7853 0.04 0.04" ctrl="0 0 0 -1.57079 0 1.57079 -0.7853 255"/>
