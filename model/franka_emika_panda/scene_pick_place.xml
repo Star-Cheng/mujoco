@@ -1,0 +1,77 @@
+<mujoco model="panda pick and place scene">
+  <!--
+    复用仓库里带位置执行器和夹爪的 Panda 模型。
+    本文件只定义任务场景，不修改 Panda 本体，方便与其他示例互不影响。
+  -->
+  <include file="panda_pos.xml"/>
+
+  <statistic center="0.45 0 0.45" extent="1.0"/>
+
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.35 0.35 0.35" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.20 0.25 1"/>
+    <global azimuth="135" elevation="-25"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.35 0.50 0.70" rgb2="0.03 0.03 0.05"
+             width="512" height="3072"/>
+    <texture type="2d" name="pick_place_floor_texture" builtin="checker" mark="edge"
+             rgb1="0.22 0.28 0.34" rgb2="0.10 0.13 0.17" markrgb="0.75 0.75 0.75"
+             width="300" height="300"/>
+    <material name="pick_place_floor_material" texture="pick_place_floor_texture"
+              texuniform="true" texrepeat="5 5" reflectance="0.12"/>
+    <material name="table_material" rgba="0.45 0.33 0.22 1" specular="0.15" shininess="0.15"/>
+    <material name="cube_material" rgba="0.90 0.15 0.10 1" specular="0.25" shininess="0.25"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.3 -0.4 1.5" dir="0.1 0.2 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="pick_place_floor_material"/>
+
+    <!-- 桌面中心在 x=0.5 m，桌面上表面的世界坐标高度为 z=0.30 m。 -->
+    <body name="table" pos="0.50 0 0.25">
+      <geom name="table_top" type="box" size="0.42 0.36 0.05"
+            material="table_material" friction="1.0 0.02 0.002"/>
+    </body>
+
+    <!--
+      绿色圆盘只是放置目标的可视标记，不参与碰撞。
+      目标中心和半径会由 Python 脚本读取并用于成功判定。
+    -->
+    <body name="place_target" pos="0.50 0.14 0.303">
+      <geom name="place_target_marker" type="cylinder" size="0.055 0.003"
+            rgba="0.10 0.85 0.25 0.75" contype="0" conaffinity="0" group="2"/>
+      <site name="place_target_center" size="0.006" rgba="0.05 1 0.1 1" group="2"/>
+    </body>
+
+    <!--
+      红色方块使用 freejoint，因此可以被夹爪抓起并自由运动。
+      方块边长为 50 mm，初始时放在目标区另一侧。
+    -->
+    <body name="pick_cube" pos="0.50 -0.14 0.326">
+      <freejoint name="pick_cube_freejoint"/>
+      <geom name="pick_cube_geom" type="box" size="0.025 0.025 0.025"
+            mass="0.08" material="cube_material"
+            friction="1.5 0.03 0.003" solref="0.006 1" solimp="0.95 0.99 0.001"/>
+    </body>
+
+    <!--
+      两个固定相机为后续制作视觉数据集预留。
+      top_camera 俯视桌面；front_camera 从斜前方观察机械臂和任务区。
+    -->
+    <camera name="top_camera" pos="0.50 0 1.20" quat="1 0 0 0" fovy="42"/>
+    <camera name="front_camera" pos="1.05 -0.75 0.75"
+            xyaxes="0.806 0.591 0 -0.216 0.295 0.931" fovy="45"/>
+  </worldbody>
+
+  <!--
+    完整 keyframe：7个机械臂关节 + 2个手指关节 + 方块freejoint的7个qpos。
+    机械臂末端初始时垂直向下，便于只控制XYZ就完成抓取放置。
+  -->
+  <keyframe>
+    <key name="pick_place_home"
+         qpos="0 -0.785398 0 -2.356194 0 1.570796 0.785398 0.04 0.04 0.50 -0.14 0.326 1 0 0 0"
+         ctrl="0 -0.785398 0 -2.356194 0 1.570796 0.785398 255"/>
+  </keyframe>
+</mujoco>

@@ -1,0 +1,90 @@
+<mujoco model="panda polishing scene">
+  <include file="panda_pos.xml"/>
+
+  <statistic center="0.45 0 0.55" extent="1.15"/>
+
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.35 0.35 0.35" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="135" elevation="-18"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.35 0.5 0.7" rgb2="0.02 0.02 0.04"
+             width="512" height="3072"/>
+    <texture type="2d" name="polishing_ground" builtin="checker" mark="edge"
+             rgb1="0.22 0.28 0.34" rgb2="0.10 0.13 0.17" markrgb="0.75 0.75 0.75"
+             width="300" height="300"/>
+    <material name="polishing_ground" texture="polishing_ground" texuniform="true"
+              texrepeat="5 5" reflectance="0.15"/>
+    <material name="workpiece_material" rgba="0.36 0.39 0.43 1" specular="0.4" shininess="0.35"/>
+    <material name="pad_material" rgba="0.95 0.55 0.08 1" specular="0.15" shininess="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.4 -0.4 1.6" dir="0.1 0.2 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="polishing_ground"/>
+
+    <!-- The workpiece local +Z axis is aligned with the settled tool axis.
+         Its near face starts about 35 mm in front of the polishing pad. -->
+    <body name="workpiece" pos="0.778535806 0.000004654 0.728871639"
+          quat="0.603261195 0.218702044 0.746350103 0.176654665">
+      <geom name="workpiece_geom" type="box" size="0.16 0.12 0.02"
+            material="workpiece_material" friction="0.2 0.02 0.002"
+            solref="0.004 1" solimp="0.95 0.99 0.001"/>
+      <site name="polishing_center" pos="0 0 -0.0205" size="0.006"
+            rgba="0.1 1 0.2 0.9" group="2"/>
+      <!-- Default 40 x 30 mm serpentine polishing path.  These geoms are
+           visual only; the controller generates the same path numerically. -->
+      <geom name="trajectory_row_0" type="capsule" size="0.0012"
+            fromto="-0.02 -0.015 -0.021 0.02 -0.015 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_turn_0" type="capsule" size="0.0012"
+            fromto="0.02 -0.015 -0.021 0.02 -0.005 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_row_1" type="capsule" size="0.0012"
+            fromto="0.02 -0.005 -0.021 -0.02 -0.005 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_turn_1" type="capsule" size="0.0012"
+            fromto="-0.02 -0.005 -0.021 -0.02 0.005 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_row_2" type="capsule" size="0.0012"
+            fromto="-0.02 0.005 -0.021 0.02 0.005 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_turn_2" type="capsule" size="0.0012"
+            fromto="0.02 0.005 -0.021 0.02 0.015 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+      <geom name="trajectory_row_3" type="capsule" size="0.0012"
+            fromto="0.02 0.015 -0.021 -0.02 0.015 -0.021"
+            rgba="0.15 0.75 1 0.9" contype="0" conaffinity="0" group="2"/>
+    </body>
+
+    <!-- A free tool body is rigidly welded to ee_center_body below.  This keeps
+         the original Panda model untouched while giving this scene a real
+         contact geom.  The initial pose matches the TCP in panda_pos.xml. -->
+    <body name="polishing_tool" pos="0.688796086 0 0.788705734"
+          quat="0.62880214 0.21269708 0.72478743 0.18452911">
+      <freejoint name="polishing_tool_freejoint"/>
+      <inertial pos="0 0 0.008" mass="0.22" diaginertia="0.00014 0.00014 0.00020"/>
+      <geom name="tool_hub" type="cylinder" pos="0 0 0.005" size="0.025 0.005"
+            rgba="0.20 0.22 0.25 1" contype="0" conaffinity="0"/>
+      <geom name="polishing_pad" type="cylinder" pos="0 0 0.012" size="0.035 0.007"
+            material="pad_material" friction="0.2 0.03 0.003"
+            solref="0.015 1" solimp="0.90 0.97 0.003"/>
+      <site name="pad_contact_center" pos="0 0 0.0195" size="0.004"
+            rgba="1 0.2 0.1 0.9" group="2"/>
+    </body>
+  </worldbody>
+
+  <equality>
+    <weld name="tool_to_tcp" body1="polishing_tool" body2="ee_center_body"
+          relpose="0 0 0 1 0 0 0"
+          solref="0.002 1" solimp="0.99 0.999 0.0001"/>
+  </equality>
+
+  <keyframe>
+    <key name="polishing_home"
+         qpos="0 0 0 -1.57079 0 3.0 -1.7853 0.04 0.04 0.688796086 0 0.788705734 0.62880214 0.21269708 0.72478743 0.18452911"
+         ctrl="0 0 0 -1.57079 0 1.57079 -0.7853 255"/>
+  </keyframe>
+</mujoco>
